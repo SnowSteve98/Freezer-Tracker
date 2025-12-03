@@ -45,33 +45,21 @@
         const { useState, useEffect, useRef } = React;
 
         // --- Componente Wrapper per Icone Lucide (FIXED) ---
-        // Usa lucide.createElement invece di .toSvg() che causava l'errore
         const Icon = ({ name, size = 24, className = "" }) => {
             const containerRef = useRef(null);
 
             useEffect(() => {
                 const lucide = window.lucide;
-                // Controlliamo che lucide e l'icona specifica esistano
                 if (containerRef.current && lucide && lucide.icons && lucide.icons[name]) {
-                    // Creiamo l'elemento SVG usando l'API corretta
                     const svgElement = lucide.createElement(lucide.icons[name]);
-                    
-                    // Impostiamo manualmente gli attributi
                     svgElement.setAttribute('width', size);
                     svgElement.setAttribute('height', size);
-                    
-                    // Aggiungiamo le classi base di lucide + quelle custom
-                    // Nota: Non usiamo setAttribute('class') qui per evitare conflitti, 
-                    // ma lasciamo che lo span wrapper gestisca i colori tramite ereditarietà (currentColor)
                     svgElement.classList.add('lucide', `lucide-${name.toLowerCase()}`);
-                    
-                    // Puliamo e appendiamo il nuovo SVG
                     containerRef.current.innerHTML = '';
                     containerRef.current.appendChild(svgElement);
                 }
-            }, [name, size]); // Rimuoviamo className dalle dipendenze per gestirlo nel wrapper
+            }, [name, size]);
 
-            // Applichiamo le classi al wrapper span per gestire colori (text-red-400) e posizionamento
             return (
                 <span 
                     ref={containerRef} 
@@ -102,10 +90,11 @@
         );
 
         const Button = ({ children, onClick, variant = 'primary', className = "", disabled = false }) => {
-            const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all active:scale-95 flex items-center justify-center gap-2";
+            const baseStyle = "px-4 py-3 rounded-xl font-medium transition-all active:scale-95 flex items-center justify-center gap-2";
             const variants = {
                 primary: "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/50",
                 secondary: "bg-slate-700 hover:bg-slate-600 text-slate-200",
+                share: "bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/50",
                 danger: "bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50",
                 icon: "p-2 bg-transparent hover:bg-slate-700 text-slate-400 hover:text-white"
             };
@@ -122,7 +111,6 @@
 
         // --- APP PRINCIPALE ---
         function App() {
-            // --- Stato Iniziale ---
             const [activeTab, setActiveTab] = useState('inventory');
             const [freezers, setFreezers] = useState([
                 { id: 1, name: 'Freezer Cucina', compartments: ['Cassetto Alto', 'Cassetto Medio', 'Cassetto Basso'] }
@@ -130,21 +118,14 @@
             const [items, setItems] = useState([]);
             const [filterText, setFilterText] = useState('');
             const [selectedFreezer, setSelectedFreezer] = useState('all');
-
-            // --- Stato Modale ---
             const [isFormOpen, setIsFormOpen] = useState(false);
             const [newItem, setNewItem] = useState({
-                name: '',
-                category: 'Altro',
-                freezerId: 1,
-                compartment: '',
-                quantity: 1,
-                unit: 'pz',
-                step: 1,
-                image: null
+                name: '', category: 'Altro', freezerId: 1, compartment: '', quantity: 1, unit: 'pz', step: 1, image: null
             });
 
-            // --- Persistenza Dati (LocalStorage) ---
+            // Stato per gestire la compatibilità della condivisione
+            const [canShareNative, setCanShareNative] = useState(false);
+
             useEffect(() => {
                 const savedData = localStorage.getItem('freezerInventory_v1');
                 if (savedData) {
@@ -156,6 +137,10 @@
                         console.error("Errore lettura dati", e);
                     }
                 }
+                // Controlla se il browser supporta la condivisione nativa
+                if (navigator.canShare) {
+                    setCanShareNative(true);
+                }
             }, []);
 
             useEffect(() => {
@@ -163,44 +148,31 @@
                 localStorage.setItem('freezerInventory_v1', dataToSave);
             }, [freezers, items]);
 
-            // --- Gestione Immagini ---
             const handleImageUpload = (e) => {
                 const file = e.target.files[0];
                 if (file) {
                     const reader = new FileReader();
-                    reader.onloadend = () => {
-                        // Implementiamo un check sulla dimensione per non intasare localStorage
-                        // (Le stringhe base64 molto lunghe possono rallentare su dispositivi datati)
-                        setNewItem(prev => ({ ...prev, image: reader.result }));
-                    };
+                    reader.onloadend = () => setNewItem(prev => ({ ...prev, image: reader.result }));
                     reader.readAsDataURL(file);
                 }
             };
 
-            // --- Logica CRUD ---
             const addItem = () => {
                 if (!newItem.name) return;
-                const item = {
-                    ...newItem,
-                    id: Date.now(),
-                    freezerId: parseInt(newItem.freezerId)
-                };
+                const item = { ...newItem, id: Date.now(), freezerId: parseInt(newItem.freezerId) };
                 setItems(prev => [item, ...prev]);
                 setIsFormOpen(false);
                 resetForm();
             };
 
             const deleteItem = (id) => {
-                if (confirm('Sei sicuro di voler eliminare questo alimento?')) {
-                    setItems(prev => prev.filter(i => i.id !== id));
-                }
+                if (confirm('Sei sicuro di voler eliminare questo alimento?')) setItems(prev => prev.filter(i => i.id !== id));
             };
 
             const updateQuantity = (id, delta) => {
                 setItems(prev => prev.map(item => {
                     if (item.id === id) {
                         const newQty = Math.max(0, parseFloat(item.quantity) + delta);
-                        // Arrotondamento per evitare 0.30000000004
                         return { ...item, quantity: Math.round(newQty * 100) / 100 };
                     }
                     return item;
@@ -209,25 +181,37 @@
 
             const resetForm = () => {
                 setNewItem({
-                    name: '',
-                    category: 'Altro',
-                    freezerId: freezers[0]?.id || 1,
-                    compartment: freezers[0]?.compartments[0] || '',
-                    quantity: 1,
-                    unit: 'pz',
-                    step: 1,
-                    image: null
+                    name: '', category: 'Altro', freezerId: freezers[0]?.id || 1, compartment: freezers[0]?.compartments[0] || '',
+                    quantity: 1, unit: 'pz', step: 1, image: null
                 });
             };
 
-            // --- Import / Export ---
-            const exportData = () => {
+            // --- Logica Condivisione/Export Migliorata ---
+            const shareData = async () => {
                 const dataStr = JSON.stringify({ freezers, items, exportDate: new Date().toISOString() });
+                const fileName = `freezer_backup_${new Date().toISOString().slice(0,10)}.json`;
+                const file = new File([dataStr], fileName, { type: "application/json" });
+
+                // Prova Condivisione Nativa (Telegram/WhatsApp)
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: 'Inventario Freezer',
+                            text: 'Ecco il file backup del freezer aggiornato. Salvalo e importalo nell\'app!'
+                        });
+                        return; // Se ha successo, esce
+                    } catch (error) {
+                        console.log('Condivisione annullata o fallita, fallback al download', error);
+                    }
+                }
+
+                // Fallback: Download Classico se la condivisione fallisce o non è supportata
                 const blob = new Blob([dataStr], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
-                link.download = `freezer_backup_${new Date().toISOString().slice(0,10)}.json`;
+                link.download = fileName;
                 link.click();
             };
 
@@ -239,13 +223,13 @@
                     try {
                         const json = JSON.parse(event.target.result);
                         if (json.freezers && json.items) {
-                            if(confirm(`Trovati ${json.items.length} alimenti. Vuoi sovrascrivere l'inventario attuale?`)) {
+                            if(confirm(`Ho trovato ${json.items.length} alimenti nel file.\n\nSostituisco l'inventario attuale con questo?`)) {
                                 setFreezers(json.freezers);
                                 setItems(json.items);
-                                alert('Importazione completata con successo!');
+                                alert('Fatto! Inventario aggiornato.');
                             }
                         } else {
-                            alert('Formato file non valido.');
+                            alert('Il file non sembra corretto.');
                         }
                     } catch (err) {
                         alert('Errore nella lettura del file.');
@@ -254,9 +238,7 @@
                 reader.readAsText(file);
             };
 
-            // --- Filtri ---
             const currentFreezer = freezers.find(f => f.id === parseInt(newItem.freezerId));
-            
             const filteredItems = items.filter(item => {
                 const matchSearch = item.name.toLowerCase().includes(filterText.toLowerCase()) || 
                                     item.category.toLowerCase().includes(filterText.toLowerCase());
@@ -266,7 +248,6 @@
 
             return (
                 <div className="min-h-screen bg-slate-900 text-slate-100 font-sans pb-24">
-                    {/* Header */}
                     <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-700 p-4">
                         <div className="flex justify-between items-center mb-4">
                             <h1 className="text-xl font-bold flex items-center gap-2 text-blue-400">
@@ -277,51 +258,29 @@
                                 <Icon name="Settings" className="w-5 h-5" />
                             </button>
                         </div>
-
                         {activeTab === 'inventory' && (
                             <div className="space-y-3">
                                 <div className="relative">
-                                    <span className="absolute left-3 top-2.5 text-slate-500">
-                                        <Icon name="Search" className="w-5 h-5" />
-                                    </span>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Cerca..." 
-                                        className="w-full bg-slate-800 border-none rounded-xl py-2 pl-10 pr-4 text-slate-200 focus:ring-2 focus:ring-blue-500 placeholder-slate-500 outline-none"
-                                        value={filterText}
-                                        onChange={(e) => setFilterText(e.target.value)}
-                                    />
+                                    <span className="absolute left-3 top-2.5 text-slate-500"><Icon name="Search" className="w-5 h-5" /></span>
+                                    <input type="text" placeholder="Cerca..." className="w-full bg-slate-800 border-none rounded-xl py-2 pl-10 pr-4 text-slate-200 focus:ring-2 focus:ring-blue-500 placeholder-slate-500 outline-none"
+                                        value={filterText} onChange={(e) => setFilterText(e.target.value)} />
                                 </div>
                                 <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                                    <button 
-                                        onClick={() => setSelectedFreezer('all')}
-                                        className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedFreezer === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}
-                                    >
-                                        Tutti
-                                    </button>
+                                    <button onClick={() => setSelectedFreezer('all')} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedFreezer === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}>Tutti</button>
                                     {freezers.map(f => (
-                                        <button 
-                                        key={f.id} 
-                                        onClick={() => setSelectedFreezer(f.id)}
-                                        className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedFreezer === f.id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}
-                                        >
-                                        {f.name}
-                                        </button>
+                                        <button key={f.id} onClick={() => setSelectedFreezer(f.id)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedFreezer === f.id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{f.name}</button>
                                     ))}
                                 </div>
                             </div>
                         )}
                     </header>
 
-                    {/* Main Content */}
                     <main className="p-4 space-y-4">
                         {activeTab === 'inventory' && (
                             <>
                                 {filteredItems.length === 0 ? (
                                     <div className="text-center py-20 text-slate-500">
-                                        <div className="flex justify-center mb-4 opacity-20">
-                                            <Icon name="Package" size={64} />
-                                        </div>
+                                        <div className="flex justify-center mb-4 opacity-20"><Icon name="Package" size={64} /></div>
                                         <p>Nessun alimento trovato.</p>
                                         <p className="text-sm">Premi + per aggiungere qualcosa.</p>
                                     </div>
@@ -345,27 +304,15 @@
                                                             {freezers.find(f => f.id === item.freezerId)?.name} • {item.compartment}
                                                         </p>
                                                     </div>
-                                                    <button onClick={() => deleteItem(item.id)} className="text-slate-600 hover:text-red-400 p-1">
-                                                        <Icon name="Trash2" className="w-5 h-5" />
-                                                    </button>
+                                                    <button onClick={() => deleteItem(item.id)} className="text-slate-600 hover:text-red-400 p-1"><Icon name="Trash2" className="w-5 h-5" /></button>
                                                 </div>
                                                 <div className="flex items-center gap-3 mt-2">
-                                                    <button 
-                                                        onClick={() => updateQuantity(item.id, -parseFloat(item.step))}
-                                                        className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center hover:bg-slate-600 active:bg-blue-600 transition-colors"
-                                                    >
-                                                        <Icon name="Minus" className="w-4 h-4" />
-                                                    </button>
+                                                    <button onClick={() => updateQuantity(item.id, -parseFloat(item.step))} className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center hover:bg-slate-600 active:bg-blue-600 transition-colors"><Icon name="Minus" className="w-4 h-4" /></button>
                                                     <div className="text-center min-w-[60px]">
                                                         <span className="text-xl font-bold block leading-none">{item.quantity}</span>
                                                         <span className="text-[10px] text-slate-400 uppercase">{item.unit}</span>
                                                     </div>
-                                                    <button 
-                                                        onClick={() => updateQuantity(item.id, parseFloat(item.step))}
-                                                        className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center hover:bg-slate-600 active:bg-blue-600 transition-colors"
-                                                    >
-                                                        <Icon name="Plus" className="w-4 h-4" />
-                                                    </button>
+                                                    <button onClick={() => updateQuantity(item.id, parseFloat(item.step))} className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center hover:bg-slate-600 active:bg-blue-600 transition-colors"><Icon name="Plus" className="w-4 h-4" /></button>
                                                 </div>
                                             </div>
                                         </Card>
@@ -376,26 +323,49 @@
 
                         {activeTab === 'settings' && (
                             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                                <Card className="p-5">
-                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-                                        <Icon name="FolderOpen" className="w-5 h-5 text-blue-400" />
-                                        Gestione Dati
+                                {/* CARD CONDIVISIONE E IMPORTAZIONE */}
+                                <Card className="p-6 border-blue-500/30">
+                                    <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-white">
+                                        <Icon name="Share2" className="w-5 h-5 text-green-400" />
+                                        Sincronizza Famiglia
                                     </h2>
-                                    <p className="text-sm text-slate-400 mb-4">
-                                        Esporta/Importa il database (JSON).
+                                    <p className="text-sm text-slate-400 mb-6">
+                                        Usa questi tasti per passare l'inventario tra i telefoni.
                                     </p>
-                                    <div className="grid grid-cols-1 gap-3">
-                                        <Button onClick={exportData} variant="secondary">
-                                            <Icon name="Download" className="w-4 h-4" /> Esporta Inventario
-                                        </Button>
-                                        <div className="relative">
-                                            <input type="file" accept=".json" onChange={importData} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                            <Button variant="primary" className="w-full">
-                                                <Icon name="Upload" className="w-4 h-4" /> Importa Inventario
+                                    
+                                    <div className="space-y-4">
+                                        {/* Tasto SHARE */}
+                                        <div>
+                                            <div className="text-xs uppercase font-bold text-slate-500 mb-2">1. Invia a qualcuno</div>
+                                            <Button onClick={shareData} variant="share" className="w-full py-4 text-lg shadow-xl shadow-green-900/20">
+                                                <Icon name="Send" className="w-5 h-5" /> 
+                                                Condividi su Telegram/WhatsApp
                                             </Button>
+                                        </div>
+
+                                        <div className="flex items-center gap-4 py-2">
+                                            <div className="h-px bg-slate-700 flex-1"></div>
+                                            <span className="text-slate-500 text-xs">OPPURE</span>
+                                            <div className="h-px bg-slate-700 flex-1"></div>
+                                        </div>
+
+                                        {/* Tasto IMPORT */}
+                                        <div>
+                                            <div className="text-xs uppercase font-bold text-slate-500 mb-2">2. Carica file ricevuto</div>
+                                            <div className="relative">
+                                                <input type="file" accept=".json" onChange={importData} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                                <Button variant="primary" className="w-full py-4 text-lg bg-slate-700 border border-slate-600 hover:bg-slate-600">
+                                                    <Icon name="Download" className="w-5 h-5 text-blue-300" /> 
+                                                    Seleziona File Ricevuto
+                                                </Button>
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 mt-2 text-center">
+                                                (Prima salva il file che ti hanno mandato su Telegram/WhatsApp nei download del telefono)
+                                            </p>
                                         </div>
                                     </div>
                                 </Card>
+
                                 <Card className="p-5">
                                     <h2 className="text-lg font-bold mb-4">Gestione Freezer</h2>
                                     {freezers.map(f => (
@@ -411,6 +381,7 @@
                                         <Icon name="Plus" className="w-4 h-4" /> Aggiungi Freezer
                                     </Button>
                                 </Card>
+
                                 <Button variant="secondary" onClick={() => setActiveTab('inventory')} className="w-full">
                                     Torna all'Inventario
                                 </Button>
@@ -418,45 +389,28 @@
                         )}
                     </main>
 
-                    {/* Floating Action Button */}
                     {activeTab === 'inventory' && (
-                        <button 
-                            onClick={() => { setIsFormOpen(true); resetForm(); }}
-                            className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-900/50 hover:bg-blue-500 active:scale-90 transition-all z-40"
-                        >
+                        <button onClick={() => { setIsFormOpen(true); resetForm(); }} className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-900/50 hover:bg-blue-500 active:scale-90 transition-all z-40">
                             <Icon name="Plus" className="w-8 h-8 text-white" />
                         </button>
                     )}
 
-                    {/* Modale Aggiunta */}
                     {isFormOpen && (
                         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
                             <div className="bg-slate-800 w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-xl font-bold">Aggiungi Alimento</h2>
-                                    <button onClick={() => setIsFormOpen(false)} className="p-2 bg-slate-700 rounded-full">
-                                        <Icon name="X" className="w-5 h-5" />
-                                    </button>
+                                    <button onClick={() => setIsFormOpen(false)} className="p-2 bg-slate-700 rounded-full"><Icon name="X" className="w-5 h-5" /></button>
                                 </div>
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Cosa inserisci?</label>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Es. Petti di pollo" 
-                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none"
-                                            value={newItem.name}
-                                            onChange={e => setNewItem({...newItem, name: e.target.value})}
-                                        />
+                                        <input type="text" placeholder="Es. Petti di pollo" className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Categoria</label>
-                                            <select 
-                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none"
-                                                value={newItem.category}
-                                                onChange={e => setNewItem({...newItem, category: e.target.value})}
-                                            >
+                                            <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none" value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})}>
                                                 {Object.keys(CATEGORY_ICONS_MAP).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                             </select>
                                         </div>
@@ -472,25 +426,17 @@
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Freezer</label>
-                                            <select 
-                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none"
-                                                value={newItem.freezerId}
-                                                onChange={e => {
-                                                    const fid = parseInt(e.target.value);
-                                                    const f = freezers.find(fr => fr.id === fid);
-                                                    setNewItem({...newItem, freezerId: fid, compartment: f.compartments[0]});
-                                                }}
-                                            >
+                                            <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none" value={newItem.freezerId} onChange={e => {
+                                                const fid = parseInt(e.target.value);
+                                                const f = freezers.find(fr => fr.id === fid);
+                                                setNewItem({...newItem, freezerId: fid, compartment: f.compartments[0]});
+                                            }}>
                                                 {freezers.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                                             </select>
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Scomparto</label>
-                                            <select 
-                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none"
-                                                value={newItem.compartment}
-                                                onChange={e => setNewItem({...newItem, compartment: e.target.value})}
-                                            >
+                                            <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none" value={newItem.compartment} onChange={e => setNewItem({...newItem, compartment: e.target.value})}>
                                                 {currentFreezer?.compartments.map(c => <option key={c} value={c}>{c}</option>)}
                                             </select>
                                         </div>
