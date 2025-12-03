@@ -59,7 +59,6 @@
   appId: "1:41613792872:web:fbdd065368dbcacac38ddd"
 
 };
-;
         
         // ==========================================================================================
 
@@ -163,6 +162,7 @@
             const [filterText, setFilterText] = useState('');
             const [selectedFreezer, setSelectedFreezer] = useState('all');
             const [selectedCategory, setSelectedCategory] = useState('all');
+            const [selectedStatus, setSelectedStatus] = useState('all'); // Nuovo filtro stato
             const [sortBy, setSortBy] = useState('date');
             const [showSortMenu, setShowSortMenu] = useState(false);
 
@@ -393,13 +393,20 @@
                     const matchSearch = item.name.toLowerCase().includes(filterText.toLowerCase());
                     const matchFreezer = selectedFreezer === 'all' || item.freezerId === parseInt(selectedFreezer);
                     const matchCategory = selectedCategory === 'all' || item.category === selectedCategory;
-                    return matchSearch && matchFreezer && matchCategory;
+                    const matchStatus = selectedStatus === 'all' || item.status === selectedStatus;
+                    return matchSearch && matchFreezer && matchCategory && matchStatus;
                 });
                 return result.sort((a, b) => {
                     switch (sortBy) {
                         case 'name': return a.name.localeCompare(b.name);
                         case 'qty': return b.quantity - a.quantity;
                         case 'cat': return a.category.localeCompare(b.category);
+                        case 'status':
+                            // Priorità: low (0) -> opened (1) -> closed (2)
+                            const statusOrder = { 'low': 0, 'opened': 1, 'closed': 2 };
+                            const sa = statusOrder[a.status || 'closed'];
+                            const sb = statusOrder[b.status || 'closed'];
+                            return sa - sb;
                         case 'date':
                         default:
                             if (!a.expiryDate && !b.expiryDate) return 0;
@@ -408,10 +415,10 @@
                             return new Date(a.expiryDate) - new Date(b.expiryDate);
                     }
                 });
-            }, [items, filterText, selectedFreezer, selectedCategory, sortBy]);
+            }, [items, filterText, selectedFreezer, selectedCategory, selectedStatus, sortBy]);
 
             const currentFreezer = freezers.find(f => f.id === parseInt(newItem.freezerId));
-            const sortLabels = { 'date': 'Scadenza', 'name': 'Nome', 'qty': 'Quantità', 'cat': 'Categoria' };
+            const sortLabels = { 'date': 'Scadenza', 'name': 'Nome', 'qty': 'Quantità', 'cat': 'Categoria', 'status': 'Stato (Esaurim./Aperto)' };
 
             return (
                 <div className="min-h-screen bg-slate-900 text-slate-100 font-sans pb-24">
@@ -473,6 +480,14 @@
                                         </button>
                                     ))}
                                 </div>
+                                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar pt-1 border-t border-slate-800/50">
+                                    <button onClick={() => setSelectedStatus('all')} className={`whitespace-nowrap px-3 py-1 rounded-full text-xs border transition-colors ${selectedStatus === 'all' ? 'bg-slate-200 text-slate-900 border-slate-200' : 'bg-transparent text-slate-400 border-slate-700'}`}>Tutti</button>
+                                    {Object.entries(STATUS_LABELS).map(([key, label]) => (
+                                        <button key={key} onClick={() => setSelectedStatus(key)} className={`whitespace-nowrap px-3 py-1 rounded-full text-xs border transition-colors flex items-center gap-1 ${selectedStatus === key ? 'bg-slate-700 text-white border-slate-600' : 'bg-transparent text-slate-500 border-slate-800'}`}>
+                                            <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[key]}`}></div> {label}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </header>
@@ -509,7 +524,10 @@
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex justify-between items-start">
                                                         <div>
-                                                            <h3 className="font-bold text-base truncate text-slate-100 leading-tight">{item.name}</h3>
+                                                            <h3 className="font-bold text-base truncate text-slate-100 leading-tight flex items-center gap-2">
+                                                                {item.name}
+                                                                <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[item.status || 'closed']} flex-shrink-0`}></div>
+                                                            </h3>
                                                             <p className="text-[10px] text-blue-400 font-medium bg-blue-900/30 inline-block px-1.5 py-0.5 rounded mt-1">
                                                                 {freezers.find(f => f.id === item.freezerId)?.name} • {item.compartment}
                                                             </p>
