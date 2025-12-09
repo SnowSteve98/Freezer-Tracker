@@ -8,6 +8,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>FrostManager</title>
     
+     <!-- FAVICON: Aggiungi il tuo file 'icon.png' nella stessa cartella -->
+    <link rel="icon" type="image/png" href="icon.png">
+    
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -38,43 +41,29 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // ==========================================================================================
-        //  ISTRUZIONI PER SINCRONIZZAZIONE AUTOMATICA (CLOUD)
-        // ==========================================================================================
-        // Incolla qui sotto la configurazione Firebase se vuoi la sync automatica.
-        // Lascia null per uso offline.
-        
-        const FIREBASE_CONFIG = {
-
-  apiKey: "AIzaSyD_I8WSWT4JPFIHxGMcRyDOVRuN5gGfJQA",
-
-  authDomain: "freezer-storage-f74f4.firebaseapp.com",
-
-  projectId: "freezer-storage-f74f4",
-
-  storageBucket: "freezer-storage-f74f4.firebasestorage.app",
-
-  messagingSenderId: "41613792872",
-
-  appId: "1:41613792872:web:fbdd065368dbcacac38ddd"
-
-};
-        
-        // ==========================================================================================
-
         const { useState, useEffect, useRef, useMemo } = React;
 
-        // --- Firebase Init Helpers ---
+        // ==========================================================================================
+        //  INIZIALIZZAZIONE FIREBASE DINAMICA
+        // ==========================================================================================
+        // Cerchiamo la configurazione nel LocalStorage invece che nel codice sorgente
         let db = null;
-        if (FIREBASE_CONFIG && window.firebase) {
+        const savedFirebaseConfig = localStorage.getItem('frostManager_firebase_config');
+
+        if (savedFirebaseConfig && window.firebase) {
             try {
-                firebase.initializeApp(FIREBASE_CONFIG);
+                const config = JSON.parse(savedFirebaseConfig);
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(config);
+                }
                 db = firebase.firestore();
-                console.log("Firebase connesso");
+                console.log("Firebase inizializzato da configurazione salvata.");
             } catch (e) {
                 console.error("Errore inizializzazione Firebase:", e);
+                // Se la config è corrotta, potremmo volerla rimuovere, ma per ora logghiamo solo l'errore
             }
         }
+        // ==========================================================================================
 
         // --- Icon Wrapper ---
         const Icon = ({ name, size = 24, className = "" }) => {
@@ -160,11 +149,15 @@
             const [isCloudEnabled, setIsCloudEnabled] = useState(!!db);
             const [cloudStatus, setCloudStatus] = useState(!!db ? 'Connesso' : 'Offline');
             
+            // Config Management State
+            const [showConfigInput, setShowConfigInput] = useState(false);
+            const [configInputValue, setConfigInputValue] = useState('');
+
             // Filters & Sort
             const [filterText, setFilterText] = useState('');
             const [selectedFreezer, setSelectedFreezer] = useState('all');
             const [selectedCategory, setSelectedCategory] = useState('all');
-            const [selectedStatus, setSelectedStatus] = useState('all'); // Nuovo filtro stato
+            const [selectedStatus, setSelectedStatus] = useState('all');
             const [sortBy, setSortBy] = useState('date');
             const [showSortMenu, setShowSortMenu] = useState(false);
 
@@ -226,6 +219,29 @@
                       });
                 } else {
                     localStorage.setItem('freezerInventory_v2', JSON.stringify({ freezers: newFreezers, items: newItems }));
+                }
+            };
+
+            // --- CONFIG MANAGEMENT ---
+            const saveCloudConfig = () => {
+                try {
+                    // Validazione basilare JSON
+                    const config = JSON.parse(configInputValue);
+                    if (!config.apiKey || !config.projectId) {
+                        throw new Error("JSON non valido: mancano campi essenziali (apiKey, projectId)");
+                    }
+                    localStorage.setItem('frostManager_firebase_config', JSON.stringify(config));
+                    alert("Configurazione salvata! L'app verrà ricaricata per connettersi.");
+                    window.location.reload();
+                } catch (e) {
+                    alert("Errore nel JSON: " + e.message);
+                }
+            };
+
+            const clearCloudConfig = () => {
+                if (confirm("Vuoi disconnettere il cloud? Tornerai alla modalità offline.")) {
+                    localStorage.removeItem('frostManager_firebase_config');
+                    window.location.reload();
                 }
             };
 
@@ -404,7 +420,6 @@
                         case 'qty': return b.quantity - a.quantity;
                         case 'cat': return a.category.localeCompare(b.category);
                         case 'status':
-                            // Priorità: low (0) -> opened (1) -> closed (2)
                             const statusOrder = { 'low': 0, 'opened': 1, 'closed': 2 };
                             const sa = statusOrder[a.status || 'closed'];
                             const sb = statusOrder[b.status || 'closed'];
@@ -562,23 +577,56 @@
                                 
                                 {isCloudEnabled ? (
                                     <Card className="p-6 border-green-500/30 bg-slate-800/80">
-                                        <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-green-400"><Icon name="Cloud" className="w-5 h-5" /> Cloud Attivo</h2>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h2 className="text-lg font-bold flex items-center gap-2 text-green-400"><Icon name="Cloud" className="w-5 h-5" /> Cloud Attivo</h2>
+                                            <button onClick={clearCloudConfig} className="text-xs text-red-400 underline">Disconnetti</button>
+                                        </div>
                                         <p className="text-sm text-slate-400">
                                             L'inventario è sincronizzato automaticamente con Google Firebase.
                                         </p>
                                     </Card>
                                 ) : (
-                                    <Card className="p-6 border-blue-500/30">
-                                        <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-white"><Icon name="Share2" className="w-5 h-5 text-green-400" /> Sincronizza (Manuale)</h2>
-                                        <div className="space-y-4">
-                                            <p className="text-xs text-slate-400">Per la sync automatica, inserisci la config Firebase nel codice. Altrimenti usa questi tasti:</p>
-                                            <Button onClick={shareData} variant="share" className="w-full shadow-green-900/20"><Icon name="Send" className="w-5 h-5" /> Invia Backup</Button>
-                                            <div className="relative">
-                                                <input type="file" accept=".json" onChange={importData} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                                                <Button variant="primary" className="w-full bg-slate-700 border border-slate-600 hover:bg-slate-600"><Icon name="Download" className="w-5 h-5 text-blue-300" /> Carica Backup</Button>
+                                    <>
+                                        <Card className="p-6 border-blue-500/30">
+                                            <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-white"><Icon name="CloudCog" className="w-5 h-5 text-blue-400" /> Configurazione Cloud</h2>
+                                            
+                                            {!showConfigInput ? (
+                                                <div className="space-y-3">
+                                                    <p className="text-xs text-slate-400">
+                                                        Per attivare la sincronizzazione in tempo reale, inserisci qui il codice di configurazione del tuo progetto Firebase.
+                                                    </p>
+                                                    <Button onClick={() => setShowConfigInput(true)} variant="secondary" className="w-full">
+                                                        Inserisci Configurazione
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    <textarea 
+                                                        className="w-full h-32 bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs font-mono text-slate-300 focus:border-blue-500 outline-none resize-none"
+                                                        placeholder='Incolla qui: { "apiKey": "...", ... }'
+                                                        value={configInputValue}
+                                                        onChange={(e) => setConfigInputValue(e.target.value)}
+                                                    />
+                                                    <div className="flex gap-2">
+                                                        <Button onClick={() => setShowConfigInput(false)} variant="secondary" className="flex-1">Annulla</Button>
+                                                        <Button onClick={saveCloudConfig} className="flex-1">Salva e Connetti</Button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </Card>
+
+                                        <Card className="p-6 border-slate-700">
+                                            <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-white"><Icon name="Share2" className="w-5 h-5 text-slate-400" /> Backup Manuale</h2>
+                                            <div className="space-y-4">
+                                                <p className="text-xs text-slate-400">Usa questi tasti se non vuoi usare il cloud:</p>
+                                                <Button onClick={shareData} variant="share" className="w-full shadow-green-900/20"><Icon name="Send" className="w-5 h-5" /> Invia Backup</Button>
+                                                <div className="relative">
+                                                    <input type="file" accept=".json" onChange={importData} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                                    <Button variant="primary" className="w-full bg-slate-700 border border-slate-600 hover:bg-slate-600"><Icon name="Download" className="w-5 h-5 text-blue-300" /> Carica Backup</Button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </Card>
+                                        </Card>
+                                    </>
                                 )}
 
                                 <Card className="p-5">
